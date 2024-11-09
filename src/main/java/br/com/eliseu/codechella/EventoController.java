@@ -1,10 +1,10 @@
 package br.com.eliseu.codechella;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 import java.time.Duration;
 
@@ -12,8 +12,13 @@ import java.time.Duration;
 @RequestMapping("/eventos")
 public class EventoController {
 
-    @Autowired
-    private EventoService servico;
+    private final EventoService servico;
+    private final Sinks.Many<EventoDto> eventoSink;
+
+    public EventoController(EventoService servico) {
+        this.servico = servico;
+        this.eventoSink = Sinks.many().multicast().onBackpressureBuffer();
+    }
 
     @GetMapping()
     public Flux<EventoDto> obterTodos() {
@@ -27,7 +32,7 @@ public class EventoController {
 
     @PostMapping()
     public Mono<EventoDto> cadastrar(@RequestBody EventoDto eventoDto) {
-        return servico.cadastrar(eventoDto);
+        return servico.cadastrar(eventoDto).doOnSuccess(eventoSink::tryEmitNext);
     }
 
     @DeleteMapping("/{id}")
@@ -37,7 +42,7 @@ public class EventoController {
 
     @GetMapping(value = "/categoria/{tipo}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<EventoDto> obterPorTipo(@PathVariable String tipo) {
-        return Flux.from(servico.obterPorTipo(tipo)).delayElements(Duration.ofSeconds(4));
+        return Flux.merge(servico.obterPorTipo(tipo), eventoSink.asFlux()).delayElements(Duration.ofSeconds(4));
     }
 
 }
